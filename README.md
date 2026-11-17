@@ -22,9 +22,6 @@ https://fireflies-clone-mu.vercel.app
 
 (https://fireflies-clone-wkk2.onrender.com/)/docs
 
-**GitHub Repository**
-
-(https://github.com/Brij881/fireflies-clone/)
 
 > The application is hosted using free-tier infrastructure. The backend may take a short time to wake up after a period of inactivity.
 
