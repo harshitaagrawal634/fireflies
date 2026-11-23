@@ -19,6 +19,7 @@ import { useRouter } from "next/navigation";
 import {
   createMeeting,
   createTranscript,
+  uploadVttTranscript,
 } from "@/lib/api";
 
 interface Props {
@@ -105,7 +106,7 @@ export default function CreateMeetingModal({
   const [transcript, setTranscript] = useState("");
 
   const [fileName, setFileName] = useState("");
-
+  const [vttFile, setVttFile] = useState<File | null>(null);
   const [participants, setParticipants] = useState<
     ParticipantInput[]
   >([
@@ -157,40 +158,52 @@ export default function CreateMeetingModal({
     );
   }
 
-  async function handleFile(
-    event: ChangeEvent<HTMLInputElement>
-  ) {
-    const file = event.target.files?.[0];
 
-    if (!file) {
-      return;
-    }
+async function handleFile(
+  event: ChangeEvent<HTMLInputElement>
+) {
+  const file = event.target.files?.[0];
 
-    if (!file.name.toLowerCase().endsWith(".txt")) {
-      setError("Please upload a .txt transcript file.");
-      event.target.value = "";
-      return;
-    }
+  if (!file) return;
 
-    try {
-      const text = await file.text();
+  const name = file.name.toLowerCase();
+  const isTxt = name.endsWith(".txt");
+  const isVtt = name.endsWith(".vtt");
 
-      setTranscript(text);
-      setFileName(file.name);
-      setError("");
-    } catch {
-      setError("Unable to read the transcript file.");
-    }
+  if (!isTxt && !isVtt) {
+    setError("Please upload a .txt or .vtt file.");
+    event.target.value = "";
+    return;
   }
+
+  if (file.size > 2_000_000) {
+    setError("Transcript file must be under 2 MB.");
+    event.target.value = "";
+    return;
+  }
+
+  try {
+    const text = await file.text();
+
+    setTranscript(text);
+    setFileName(file.name);
+    setVttFile(isVtt ? file : null);
+    setError("");
+  } catch {
+    setError("Unable to read the transcript file.");
+  }
+}
+
 
   function removeFile() {
-    setFileName("");
-    setTranscript("");
+  setFileName("");
+  setTranscript("");
+  setVttFile(null);
 
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
+  if (fileInputRef.current) {
+    fileInputRef.current.value = "";
   }
+}
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -234,8 +247,12 @@ export default function CreateMeetingModal({
         summary: summary.trim() || undefined,
         participants: validParticipants,
       });
-
-      if (transcript.trim()) {
+      
+      if (vttFile) {
+        // VTT: Send file to FastAPI for proper parsing
+        await uploadVttTranscript(meeting.id, vttFile);
+      } else if (transcript.trim()) {
+        // TXT or manually entered transcript
         const segments = parseTranscript(transcript);
 
         if (segments.length > 0) {
@@ -443,7 +460,7 @@ export default function CreateMeetingModal({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".txt,text/plain"
+              accept=".txt,text/plain,.vtt"
               onChange={handleFile}
               className="hidden"
             />
@@ -464,7 +481,7 @@ export default function CreateMeetingModal({
                   </p>
 
                   <p className="mt-0.5 text-xs text-slate-400">
-                    TXT files supported
+                    VTT, TXT files supported
                   </p>
                 </div>
               </button>
@@ -497,12 +514,14 @@ export default function CreateMeetingModal({
             <textarea
               value={transcript}
               onChange={(event) => {
-                setTranscript(event.target.value);
+              setTranscript(event.target.value);
+              setFileName("");
+              setVttFile(null);
 
-                if (fileName) {
-                  setFileName("");
-                }
-              }}
+              if (fileInputRef.current) {
+                fileInputRef.current.value = "";
+              }
+            }}
               rows={8}
               placeholder={`Alex: Thanks everyone for joining.
 Sarah: Let's review the launch timeline.

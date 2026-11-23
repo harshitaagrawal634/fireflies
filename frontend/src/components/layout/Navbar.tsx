@@ -13,7 +13,7 @@ export default function Navbar() {
         </button>
 
         <div className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-100 text-sm font-semibold text-violet-700">
-          BP
+          HA
         </div>
       </div>
     </header>

@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from app.models.transcript import TranscriptSegment
+from app.services.ai_action_items import extract_action_items
 
 from app.database import get_db
 from app.models.action_item import ActionItem
@@ -126,3 +128,83 @@ def delete_action_item(
 
     db.delete(item)
     db.commit()
+
+
+@router.post(
+    "/api/meetings/{meeting_id}/action-items/extract",
+    response_model=list[ActionItemResponse]
+)
+def generate_action_items(
+    meeting_id: int,
+    db: Session = Depends(get_db)
+):
+    # 1. Verify the meeting exists
+    get_meeting_or_404(meeting_id, db)
+
+    # 2. Fetch its transcript
+    segments = (
+        db.query(TranscriptSegment)
+        .filter(TranscriptSegment.meeting_id == meeting_id)
+        .order_by(TranscriptSegment.segment_order.asc())
+        .all()
+    )
+
+    if not segments:
+        raise HTTPException(
+            status_code=400,
+            detail="No transcript found for this meeting"
+        )
+
+    # 3. Prepare transcript for Gemini
+    transcript = "\n".join(
+        f"{segment.speaker}: {segment.text}"
+        for segment in segments
+    )
+
+    # 4. Extract structured action items
+    extracted_items = extract_action_items(transcript)
+
+    # 5. Fetch existing tasks to prevent duplicates
+    existing_items = (
+        db.query(ActionItem)
+        .filter(ActionItem.meeting_id == meeting_id)
+        .all()
+    )
+
+    existing_keys = {
+        (
+            item.description.strip().casefold(),
+            (item.assignee or "").strip().casefold()
+        )
+        for item in existing_items
+    }
+
+    # 6. Save only new tasks
+    created = []
+
+    for data in extracted_items:
+        key = (
+            data.description.strip().casefold(),
+            (data.assignee or "").strip().casefold()
+        )
+
+        if key in existing_keys:
+            continue
+
+        item = ActionItem(
+            meeting_id=meeting_id,
+            description=data.description.strip(),
+            assignee=data.assignee,
+            completed=False
+        )
+
+        db.add(item)
+        created.append(item)
+        existing_keys.add(key)
+
+    db.commit()
+
+    for item in created:
+        db.refresh(item)
+
+    return created

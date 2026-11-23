@@ -202,3 +202,44 @@ export function deleteActionItem(
     }
   );
 }
+
+export function extractActionItems(
+  meetingId: number
+): Promise<ActionItem[]> {
+  return request<ActionItem[]>(
+    `/api/meetings/${meetingId}/action-items/extract`,
+    {
+      method: "POST",
+    }
+  );
+}
+
+
+export async function uploadVttTranscript(
+  meetingId: number,
+  file: File
+): Promise<TranscriptSegment[]> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(
+    `${API_URL}/api/meetings/${meetingId}/transcript/upload`,
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    let message = `VTT upload failed: ${response.status}`;
+
+    try {
+      const data = await response.json();
+      if (data.detail) message = data.detail;
+    } catch {}
+
+    throw new ApiError(message, response.status);
+  }
+
+  return response.json();
+}

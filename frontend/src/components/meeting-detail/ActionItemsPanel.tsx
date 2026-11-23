@@ -6,6 +6,7 @@ import {
   Circle,
   Pencil,
   Plus,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
@@ -14,7 +15,9 @@ import {
   createActionItem,
   deleteActionItem,
   updateActionItem,
+  extractActionItems,
 } from "@/lib/api";
+
 import { ActionItem } from "@/lib/types";
 
 interface Props {
@@ -39,7 +42,9 @@ export default function ActionItemsPanel({
   const [editAssignee, setEditAssignee] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
+  // Mark an action item complete or incomplete
   async function toggleComplete(item: ActionItem) {
     try {
       const updated = await updateActionItem(item.id, {
@@ -58,7 +63,8 @@ export default function ActionItemsPanel({
     }
   }
 
-  async function handleCreate(event: FormEvent) {
+  // Create a manual action item
+  async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!description.trim()) {
@@ -85,12 +91,14 @@ export default function ActionItemsPanel({
     }
   }
 
+  // Start editing an action item
   function startEditing(item: ActionItem) {
     setEditingId(item.id);
     setEditDescription(item.description);
     setEditAssignee(item.assignee ?? "");
   }
 
+  // Save edited action item
   async function saveEdit(itemId: number) {
     if (!editDescription.trim()) {
       return;
@@ -114,6 +122,7 @@ export default function ActionItemsPanel({
     }
   }
 
+  // Delete an action item
   async function handleDelete(itemId: number) {
     const confirmed = window.confirm(
       "Delete this action item?"
@@ -134,26 +143,75 @@ export default function ActionItemsPanel({
     }
   }
 
+  // Generate action items using Gemini AI
+  async function handleGenerateAI() {
+    if (generating) return;
+
+    try {
+      setGenerating(true);
+
+      const newItems = await extractActionItems(meetingId);
+
+      setItems((current) => {
+        const existingIds = new Set(
+          current.map((item) => item.id)
+        );
+
+        const uniqueItems = newItems.filter(
+          (item) => !existingIds.has(item.id)
+        );
+
+        return [...current, ...uniqueItems];
+      });
+
+      if (newItems.length === 0) {
+        alert("No new action items found.");
+      }
+    } catch (error) {
+      console.error("AI extraction failed:", error);
+      alert("Unable to generate AI action items.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <section>
-      <div className="mb-4 flex items-center">
+      {/* Header */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <h2 className="font-semibold text-slate-900">
           Action items
         </h2>
 
-        <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
           {items.length}
         </span>
 
-        <button
-          onClick={() => setAdding(true)}
-          className="ml-auto flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700"
-        >
-          <Plus size={14} />
-          Add
-        </button>
+        <div className="ml-auto flex items-center gap-3">
+          {/* Generate with AI button */}
+          <button
+            type="button"
+            onClick={handleGenerateAI}
+            disabled={generating}
+            className="flex items-center gap-1 rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Sparkles size={14} />
+            {generating ? "Generating..." : "Generate with AI"}
+          </button>
+
+          {/* Add manually */}
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="flex items-center gap-1 text-xs font-medium text-violet-600 hover:text-violet-700"
+          >
+            <Plus size={14} />
+            Add
+          </button>
+        </div>
       </div>
 
+      {/* Add action item form */}
       {adding && (
         <form
           onSubmit={handleCreate}
@@ -196,12 +254,13 @@ export default function ActionItemsPanel({
               type="submit"
               className="rounded-md bg-violet-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
             >
-              Add item
+              {loading ? "Adding..." : "Add item"}
             </button>
           </div>
         </form>
       )}
 
+      {/* Action item list */}
       <div className="space-y-2">
         {items.map((item) => (
           <div
@@ -210,6 +269,7 @@ export default function ActionItemsPanel({
           >
             {editingId === item.id ? (
               <>
+                {/* Edit description */}
                 <input
                   value={editDescription}
                   onChange={(event) =>
@@ -218,6 +278,7 @@ export default function ActionItemsPanel({
                   className="w-full rounded-md border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-violet-400"
                 />
 
+                {/* Edit assignee */}
                 <input
                   value={editAssignee}
                   onChange={(event) =>
@@ -229,15 +290,19 @@ export default function ActionItemsPanel({
 
                 <div className="mt-2 flex justify-end gap-1">
                   <button
+                    type="button"
                     onClick={() => setEditingId(null)}
                     className="rounded p-1.5 text-slate-400 hover:bg-slate-100"
+                    aria-label="Cancel editing"
                   >
                     <X size={15} />
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => saveEdit(item.id)}
                     className="rounded p-1.5 text-violet-600 hover:bg-violet-50"
+                    aria-label="Save action item"
                   >
                     <Check size={15} />
                   </button>
@@ -245,9 +310,16 @@ export default function ActionItemsPanel({
               </>
             ) : (
               <div className="flex items-start gap-3">
+                {/* Completion toggle */}
                 <button
+                  type="button"
                   onClick={() => toggleComplete(item)}
                   className="mt-0.5 shrink-0"
+                  aria-label={
+                    item.completed
+                      ? "Mark incomplete"
+                      : "Mark complete"
+                  }
                 >
                   {item.completed ? (
                     <div className="flex h-[18px] w-[18px] items-center justify-center rounded-full bg-green-500 text-white">
@@ -261,6 +333,7 @@ export default function ActionItemsPanel({
                   )}
                 </button>
 
+                {/* Action item details */}
                 <div className="min-w-0 flex-1">
                   <p
                     className={`text-sm leading-5 ${
@@ -279,17 +352,22 @@ export default function ActionItemsPanel({
                   )}
                 </div>
 
-                <div className="flex opacity-0 transition group-hover:opacity-100">
+                {/* Edit and delete */}
+                <div className="flex shrink-0 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100">
                   <button
+                    type="button"
                     onClick={() => startEditing(item)}
                     className="rounded p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    aria-label="Edit action item"
                   >
                     <Pencil size={14} />
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => handleDelete(item.id)}
                     className="rounded p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
+                    aria-label="Delete action item"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -299,6 +377,7 @@ export default function ActionItemsPanel({
           </div>
         ))}
 
+        {/* Empty state */}
         {items.length === 0 && (
           <div className="rounded-xl border border-dashed border-slate-200 p-5 text-center text-sm text-slate-400">
             No action items yet.
