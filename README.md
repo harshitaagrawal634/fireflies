@@ -4,7 +4,7 @@ A full-stack meeting intelligence application inspired by Fireflies.ai.
 
 The application provides a central workspace for managing meetings, reviewing summaries, exploring speaker-attributed transcripts, tracking action items, and navigating meeting topics.
 
-It is built with **Next.js + TypeScript** on the frontend and **FastAPI + SQLAlchemy** on the backend, with **PostgreSQL** providing persistent production storage.
+It is built with **Next.js + TypeScript** on the frontend and **FastAPI + SQLAlchemy** on the backend, with **Neon PostgreSQL** providing persistent production storage and **Google Gemini** powering AI-assisted meeting insights.
 
 ---
 
@@ -12,15 +12,15 @@ It is built with **Next.js + TypeScript** on the frontend and **FastAPI + SQLAlc
 
 **Frontend**
 
-https://fireflies-clone-mu.vercel.app
+https://fireflies-alpha.vercel.app
 
 **Backend API**
 
-(https://fireflies-clone-wkk2.onrender.com/)
+https://fireflies-ai-ojre.onrender.com
 
 **Interactive API Documentation**
 
-(https://fireflies-clone-wkk2.onrender.com/)/docs
+https://fireflies-ai-ojre.onrender.com/docs
 
 
 > The application is hosted using free-tier infrastructure. The backend may take a short time to wake up after a period of inactivity.
@@ -142,6 +142,14 @@ Highlight active transcript segment
 
 ---
 
+### AI-Assisted Meeting Insights
+
+The backend integrates the Google Gemini API to generate meeting summaries from transcript content and extract actionable tasks. Extracted action items can be reviewed and managed in the same meeting workspace. AI calls are made from FastAPI so the Gemini API key stays on the server.
+
+AI output depends on the quality of the transcript and should be reviewed before use.
+
+---
+
 ### Action Items
 
 Action items can be managed directly from a meeting.
@@ -180,6 +188,7 @@ Transcripts can be added by:
 
 - Pasting transcript text
 - Uploading a `.txt` file
+- Uploading a `.vtt` (WebVTT) file with timestamped cues and speaker information
 
 The parser supports speaker-attributed transcripts such as:
 
@@ -197,30 +206,13 @@ Timestamped transcripts are also supported:
 [00:31] David: The API integration is complete.
 ```
 
-Parsed transcript entries are converted into structured transcript segments before being stored by the backend.
+Parsed transcript entries are converted into structured transcript segments before being stored by the backend. VTT files are parsed server-side and saved as timestamped segments.
 
 ---
 
 ## Demo Data
 
-The deployed application contains sample meetings covering different types of team discussions.
-
-Examples include:
-
-- Weekly Product Sync
-- Q3 Marketing Strategy
-- Engineering Architecture Review
-- Customer Success Review
-
-The demo meetings contain realistic:
-
-- Participants
-- Summaries
-- Transcript segments
-- Topics
-- Action items
-
-This allows search, filtering, sorting, transcript navigation, and action-item functionality to be tested immediately.
+The project supports meeting records, participants, summaries, transcript segments, topics, and action items. Local SQLite records are **not automatically migrated** to the production Neon PostgreSQL database. Production data can be created through the deployed application; sample records appear only if they have been seeded or added to Neon.
 
 ---
 
@@ -241,12 +233,13 @@ This allows search, filtering, sorting, transcript navigation, and action-item f
 - SQLAlchemy
 - Pydantic
 - Uvicorn
+- Google Gen AI Python SDK (`google-genai`)
 
 ### Database
 
 **Production**
 
-- PostgreSQL
+- Neon PostgreSQL
 
 **Local development**
 
@@ -256,7 +249,8 @@ This allows search, filtering, sorting, transcript navigation, and action-item f
 
 - Vercel — Next.js frontend
 - Render — FastAPI backend
-- Render PostgreSQL — persistent production database
+- Neon — managed PostgreSQL database
+- Google Gemini API — AI-generated summaries and action-item extraction
 
 ---
 
@@ -294,14 +288,14 @@ This allows search, filtering, sorting, transcript navigation, and action-item f
 ┌─────────────────────────────────┐
 │                                 │
 │       PostgreSQL Database       │
-│             Render              │
+│              Neon               │
 │                                 │
 │       Persistent Storage        │
 │                                 │
 └─────────────────────────────────┘
 ```
 
-The frontend and backend are deployed independently and communicate through a REST API.
+The frontend and backend are deployed independently and communicate through a REST API. FastAPI connects to Neon through SQLAlchemy and calls Google Gemini for AI-assisted summaries and action-item extraction.
 
 ---
 
@@ -312,6 +306,7 @@ fireflies-clone/
 │
 ├── backend/
 │   ├── app/
+│   │   ├── services/
 │   │   ├── models/
 │   │   ├── routers/
 │   │   ├── database.py
@@ -438,6 +433,8 @@ DELETE  /api/meetings/{id}
 ```text
 GET     /api/meetings/{id}/transcript
 POST    /api/meetings/{id}/transcript
+POST    /api/meetings/{id}/transcript/upload
+POST    /api/meetings/{id}/generate-summary
 ```
 
 ### Action Items
@@ -447,6 +444,7 @@ GET     /api/meetings/{id}/action-items
 POST    /api/meetings/{id}/action-items
 PATCH   /api/action-items/{id}
 DELETE  /api/action-items/{id}
+POST    /api/meetings/{id}/action-items/extract
 ```
 
 ### Topics
@@ -480,8 +478,8 @@ Make sure the following are installed:
 ## 1. Clone the Repository
 
 ```bash
-git clone YOUR_GITHUB_REPOSITORY_URL
-cd fireflies-clone
+git clone https://github.com/harshitaagrawal634/fireflies.git
+cd fireflies
 ```
 
 ---
@@ -534,6 +532,7 @@ Add:
 
 ```env
 FRONTEND_URL=http://localhost:3000
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 `DATABASE_URL` is optional during local development.
@@ -676,6 +675,7 @@ In production this points to the deployed Render backend.
 
 ```env
 FRONTEND_URL=http://localhost:3000
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 In production this points to the deployed Vercel frontend.
@@ -683,7 +683,8 @@ In production this points to the deployed Vercel frontend.
 Production also uses:
 
 ```env
-DATABASE_URL=<postgresql-connection-string>
+DATABASE_URL=<neon-postgresql-connection-string>
+GEMINI_API_KEY=<your-gemini-api-key>
 ```
 
 `DATABASE_URL` should never be committed to source control.
@@ -710,15 +711,9 @@ This keeps local setup simple while providing persistent production storage.
 
 ---
 
-## Demo Database Seeding
+## Database Initialization and Demo Data
 
-The application includes an idempotent seed process for demo data.
-
-During backend startup, existing seeded meetings are detected before insertion.
-
-This means redeploying the backend does not continually duplicate demo meetings.
-
-The seed process allows the deployed application to provide useful example data immediately while preserving user-created meetings in PostgreSQL.
+The backend uses SQLAlchemy models for its relational schema. Database tables and demo records are different: creating tables does not automatically copy existing local SQLite data into Neon. Verify initialization and any optional seed process against the running backend before relying on sample meetings.
 
 ---
 
@@ -817,13 +812,13 @@ Player seeks to timestamp
 
 ---
 
-### PostgreSQL for Production
+### Neon PostgreSQL for Production
 
 The initial implementation used SQLite.
 
 SQLite is suitable for local development but a standard Render web service uses an ephemeral filesystem. A database file stored there may disappear after a service redeployment.
 
-The production application therefore uses PostgreSQL.
+The production application therefore uses managed PostgreSQL on Neon.
 
 SQLite remains available as the zero-configuration local-development fallback.
 
@@ -848,13 +843,14 @@ The FastAPI API is deployed on Render.
 Production environment variables include:
 
 ```env
-FRONTEND_URL=https://fireflies-clone-mu.vercel.app
-DATABASE_URL=<Render PostgreSQL internal URL>
+FRONTEND_URL=https://fireflies-alpha.vercel.app
+DATABASE_URL=<Neon PostgreSQL connection string>
+GEMINI_API_KEY=<Gemini API key>
 ```
 
 ### Database
 
-Production data is persisted in PostgreSQL rather than the web service filesystem.
+Production data is persisted in Neon PostgreSQL rather than the web service filesystem.
 
 This ensures meetings and action-item changes survive backend restarts and redeployments.
 
@@ -863,8 +859,8 @@ This ensures meetings and action-item changes survive backend restarts and redep
 ## Limitations
 
 - Playback is simulated using transcript timing rather than actual uploaded meeting audio/video.
-- Transcript import currently supports plain-text transcripts.
-- Meeting summaries and topics are stored as structured meeting data rather than generated dynamically through an external LLM.
+- Transcript import supports plain-text and WebVTT files; automatic audio transcription is not implemented.
+- AI-assisted summary generation and action-item extraction use Gemini; automatic AI topic extraction is not included.
 - Automatic speech-to-text transcription is outside the current scope.
 - Authentication is not currently implemented.
 - Multi-user organisations and workspaces are outside the current scope.
@@ -879,9 +875,7 @@ Potential extensions include:
 - Real audio and video upload
 - Audio/video playback
 - Automatic speech-to-text transcription
-- AI-generated meeting summaries
 - Automatic topic extraction
-- Automatic action-item detection
 - Speaker identification
 - Authentication
 - Team workspaces
@@ -899,27 +893,18 @@ Potential extensions include:
 
 ## Production Verification
 
-The deployed application has been tested for:
+After deployment, verify the following end-to-end flows on the live Vercel frontend and Render API:
 
-- Meeting retrieval
-- Meeting creation
-- Meeting editing
-- Meeting deletion
-- PostgreSQL persistence
-- Search
-- Participant filtering
-- Meeting sorting
-- Transcript rendering
-- Transcript searching
-- Timestamp navigation
-- Playback controls
-- Action-item creation
-- Action-item editing
-- Action-item completion
-- Action-item deletion
-- Error handling
-- Production frontend build
-- CORS between Vercel and Render
+- Open `/docs` on the deployed FastAPI service.
+- Create a meeting and confirm its row appears in Neon.
+- Edit and delete a meeting; verify the changes persist.
+- Import `.txt` and `.vtt` transcripts and inspect timestamped segments.
+- Generate a summary with Gemini and extract action items.
+- Edit, complete, and delete action items.
+- Test search, participant filtering, sorting, and transcript navigation.
+- Confirm browser requests are allowed by the backend's CORS configuration.
+
+This is a verification checklist, not a claim that every test has already passed in production.
 
 ---
 
